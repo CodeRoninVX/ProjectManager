@@ -1,42 +1,59 @@
 package com.example.projectmanager.viewmodel
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.projectmanager.data.repository.ProjectRepository
 import com.example.projectmanager.model.Project
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
-class ProjectViewModel : ViewModel() {
+class ProjectViewModel(
+    private val repository: ProjectRepository
+) : ViewModel() {
 
-    private val _projects = MutableStateFlow(
-        listOf(
-            Project(1, "Mobile App Redesign",  "iOS/Android redesign project", 0.85f),
-            Project(2, "Website Development",  "Corporate website",            0.30f)
+    // StateFlow з бази даних — автоматично оновлює UI
+    val projects: StateFlow<List<Project>> = repository.allProjects
+        .stateIn(
+            scope         = viewModelScope,
+            started       = SharingStarted.WhileSubscribed(5000),
+            initialValue  = emptyList()
         )
-    )
-    val projects: StateFlow<List<Project>> = _projects
 
     fun addProject(title: String, description: String) {
-        val newId = (_projects.value.maxOfOrNull { it.id } ?: 0) + 1
-        _projects.value = _projects.value + Project(newId, title, description, 0f)
+        viewModelScope.launch {
+            repository.addProject(title, description)
+        }
     }
 
     fun deleteProject(id: Int) {
-        _projects.value = _projects.value.filter { it.id != id }
+        viewModelScope.launch {
+            repository.deleteProject(id)
+        }
     }
 
     fun updateProgress(id: Int, progress: Float) {
-        _projects.value = _projects.value.map {
-            if (it.id == id) it.copy(progress = progress) else it
+        viewModelScope.launch {
+            repository.updateProgress(id, progress)
         }
     }
 
-    // ← НОВИЙ МЕТОД: оновлює назву і опис
     fun updateProjectInfo(id: Int, title: String, description: String) {
-        _projects.value = _projects.value.map {
-            if (it.id == id) it.copy(title = title, description = description) else it
+        viewModelScope.launch {
+            repository.updateProjectInfo(id, title, description)
         }
     }
 
-    fun getProjectById(id: Int): Project? =
-        _projects.value.find { it.id == id }
+    // ── ViewModelFactory (потрібен, бо ViewModel тепер має параметр) ───────
+    class Factory(private val repository: ProjectRepository) : ViewModelProvider.Factory {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            if (modelClass.isAssignableFrom(ProjectViewModel::class.java)) {
+                @Suppress("UNCHECKED_CAST")
+                return ProjectViewModel(repository) as T
+            }
+            throw IllegalArgumentException("Unknown ViewModel class")
+        }
+    }
 }
